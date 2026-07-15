@@ -23,6 +23,11 @@ export type TimezoneOption = string;
 export interface LoggerOptions {
   /** IANA zone e.g. "Asia/Dhaka", or "local" (default). */
   timezone?: TimezoneOption;
+  /**
+   * Least severe level that gets logged; anything below is dropped.
+   * Defaults to "trace" (log everything).
+   */
+  minLevel?: LogLevel;
 }
 
 /** A single, fully-resolved log record handed to every transport. */
@@ -40,4 +45,12 @@ export interface LogEntry {
  */
 export interface Transport {
   write(entry: LogEntry): void;
+}
+
+/**
+ * Optionally implemented by transports whose output includes timestamps.
+ * `Logger.setTimezone` forwards the zone to every transport exposing this.
+ */
+export interface TimezoneAwareTransport extends Transport {
+  setTimezone(timezone?: TimezoneOption): void;
 }

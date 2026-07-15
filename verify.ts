@@ -33,8 +33,43 @@ dhaka.info("Timestamp rendered in Asia/Dhaka");
 const utc = new Logger({ timezone: "UTC" });
 utc.info("Timestamp rendered in UTC");
 
-console.log("\n=== Serialization: Error ===");
+console.log("\n=== setTimezone() changes the zone in place ===");
+const switchable = new Logger({ timezone: "UTC" });
+switchable.info("Rendered in UTC");
+switchable.setTimezone("Asia/Dhaka");
+switchable.info("Same logger, now Asia/Dhaka");
+switchable.setTimezone();
+switchable.info("Bare setTimezone() resets to local");
+
+console.log("\n=== Edge: invalid timezone reports an error and falls back to local ===");
+const badZone = new Logger({ timezone: "Asia/Dhakaa" }); // typo — must not crash
+badZone.info("Still logging after an invalid constructor timezone");
+badZone.setTimezone("Not/AZone"); // must not crash either
+badZone.info("Still logging after an invalid setTimezone()");
+
+console.log("\n=== Minimum level filtering ===");
+const quiet = new Logger({ minLevel: "warn" });
+quiet.trace("SHOULD NOT APPEAR");
+quiet.debug("SHOULD NOT APPEAR");
+quiet.info("SHOULD NOT APPEAR");
+quiet.warn("minLevel 'warn': warn and above show");
+quiet.error("...like this error");
+const quietScoped = quiet.scope("DB");
+quietScoped.info("SHOULD NOT APPEAR (scoped loggers share the min level)");
+quietScoped.fatal("Scoped fatal shows");
+quiet.setLevel("trace");
+quiet.trace("setLevel('trace') re-enables everything");
+
+console.log("\n=== Serialization: Error (message appears once, via the stack) ===");
 logger.error(new Error("boom with a stack trace"));
+
+console.log("\n=== Serialization: Map / Set / RegExp keep their contents ===");
+logger.info(new Map([["a", 1]]));
+logger.info(new Set([1, 2, 3]));
+logger.info(/pattern/g);
+
+console.log("\n=== Serialization: bigint renders with the n suffix ===");
+logger.info(123n);
 
 console.log("\n=== Serialization: plain object ===");
 logger.debug({ user: "john", action: "login", nested: { ok: true } });
@@ -66,6 +101,14 @@ const withTransport = new Logger();
 withTransport.addTransport(memoryTransport);
 withTransport.info("Captured by memory transport", "Test");
 console.log("Collected entries:", collected.length, "->", collected[0]?.message);
+
+console.log("\n=== Standalone ConsoleTransport (no levels map required) ===");
+const standalone = new ConsoleTransport({ timezone: "UTC" });
+standalone.write({
+  level: "info",
+  message: "Constructed directly, using default styles",
+  timestamp: new Date(),
+});
 
 console.log("\n=== attach() ===");
 const client: Record<string, unknown> = {};
@@ -100,6 +143,16 @@ console.log("Survivor transport ran despite the failure:", survivorRan);
 
 console.log("\n=== Edge: toJSON()=>undefined never prints the literal 'undefined' ===");
 logger.info({ toJSON: () => undefined });
+
+console.log("\n=== Edge: attach() refuses unsafe keys and warns on overwrite ===");
+try {
+  logger.attach(client, "__proto__");
+  console.log("❌ attach('__proto__') should have thrown");
+} catch (e) {
+  console.log("Threw as expected:", (e as Error).message);
+}
+logger.attach(client, "logs"); // second attach to the same key → warns, still works
+(client.logs as Record<string, (m: unknown) => void>).info("Re-attached after overwrite warning");
 
 // keeps ConsoleTransport referenced so the import isn't flagged unused
 void ConsoleTransport;

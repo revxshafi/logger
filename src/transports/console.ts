@@ -1,17 +1,22 @@
 import chalk from "chalk";
+import { createDefaultLevels } from "../levels";
 import { createTimeFormatter } from "../timestamp";
 import type {
   LevelConfig,
   LogEntry,
   LogLevel,
+  TimezoneAwareTransport,
   TimezoneOption,
-  Transport,
 } from "../types";
 
 export interface ConsoleTransportOptions {
   timezone?: TimezoneOption;
-  /** Resolver for a level's style; defaults are supplied by the Logger. */
-  levels: Map<LogLevel, LevelConfig>;
+  /**
+   * Resolver for a level's style. A `Logger` passes its shared map so
+   * `setLevelStyle` reaches this transport; standalone construction gets a
+   * fresh copy of the defaults.
+   */
+  levels?: Map<LogLevel, LevelConfig>;
 }
 
 /**
@@ -20,13 +25,18 @@ export interface ConsoleTransportOptions {
  * dimmed, and the message body keeps the default terminal color so JSON and
  * stack traces stay readable.
  */
-export class ConsoleTransport implements Transport {
-  private readonly formatTime: (date: Date) => string;
+export class ConsoleTransport implements TimezoneAwareTransport {
+  private formatTime: (date: Date) => string;
   private readonly levels: Map<LogLevel, LevelConfig>;
 
-  constructor(options: ConsoleTransportOptions) {
+  constructor(options: ConsoleTransportOptions = {}) {
     this.formatTime = createTimeFormatter(options.timezone);
-    this.levels = options.levels;
+    this.levels = options.levels ?? createDefaultLevels();
+  }
+
+  /** Swap the timezone at runtime; rebuilds the underlying `Intl` formatter. */
+  setTimezone(timezone: TimezoneOption = "local"): void {
+    this.formatTime = createTimeFormatter(timezone);
   }
 
   write(entry: LogEntry): void {
