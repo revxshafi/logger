@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { createDefaultLevels, LOG_LEVELS } from "./levels";
 import { ConsoleTransport } from "./transports/console";
 import type {
@@ -28,13 +29,17 @@ function serialize(data: unknown): string {
   }
   if (data !== null && typeof data === "object") {
     try {
-      // JSON.stringify returns undefined for e.g. { toJSON: () => undefined }
+      // JSON.stringify returns undefined for e.g. { toJSON: () => undefined };
+      // treat that like a failure and fall through to inspect.
       const json = JSON.stringify(data, null, 2);
-      return json ?? String(data);
+      if (json !== undefined) {
+        return json;
+      }
     } catch {
-      // circular refs, BigInt, etc. => JSON.stringify throws, so fall back
-      return String(data);
+      // circular refs, BigInt, etc. => JSON.stringify throws; inspect handles them.
     }
+    // Show the object's fields instead of a useless "[object Object]".
+    return inspect(data, { depth: 4, breakLength: 80 });
   }
   return String(data);
 }

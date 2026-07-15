@@ -172,7 +172,7 @@ Inputs are typed `unknown` and handled by shape:
 | Input          | Output                                             |
 | -------------- | -------------------------------------------------- |
 | `Error`        | `message` + newline + `stack`                      |
-| plain object   | `JSON.stringify(value, null, 2)` (falls back to `String` on failure, e.g. circular refs) |
+| plain object   | `JSON.stringify(value, null, 2)` (falls back to `util.inspect` for circular refs, BigInt, etc.) |
 | everything else | `String(value)`                                   |
 
 ```ts

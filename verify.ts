@@ -45,7 +45,7 @@ logger.info(true);
 logger.info(null);
 logger.info(undefined);
 
-console.log("\n=== Serialization: circular object falls back to String ===");
+console.log("\n=== Serialization: circular object keeps its fields via util.inspect ===");
 const circular: Record<string, unknown> = { name: "loop" };
 circular.self = circular;
 logger.debug(circular);
