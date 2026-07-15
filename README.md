@@ -38,8 +38,48 @@ const { logger } = require("@revxshafi/logger");
 ```
 
 That's the whole setup. The exported `logger` is a ready-to-use instance with a
-console transport already wired up. Reach for `new Logger()` only when you want
-a separate configuration (a different timezone, its own transports).
+console transport already wired up. Want your own configuration? Build the whole
+thing in one line with `createLogger`:
+
+```ts
+import { createLogger } from "@revxshafi/logger";
+
+const logger = createLogger({ timezone: "UTC", minLevel: "info" });
+```
+
+## One-line configuration
+
+`createLogger` takes everything at once — timezone, minimum level, and level
+styles — so there's no follow-up setup code:
+
+```ts
+import { createLogger } from "@revxshafi/logger";
+
+const logger = createLogger({
+  timezone: "UTC",
+  minLevel: "info",
+  levels: {
+    info: { color: "#00FFAA", display: "INFO*" },
+    error: { color: "#FF5555" }, // partial: display stays "ERROR"
+  },
+});
+```
+
+`levels` merges onto the defaults, so you only mention the levels — and the
+fields — you want to change.
+
+If you want to be explicit about *not* configuring anything:
+
+```ts
+const logger = createLogger({ default: true }); // ≡ createLogger()
+```
+
+`{ default: true }` can't be combined with other options — TypeScript rejects
+`createLogger({ default: true, timezone: "UTC" })` at compile time, so a config
+can't claim to be "default" while overriding things.
+
+(`new Logger(options)` still works and takes the same options; `createLogger`
+is the recommended spelling.)
 
 ## Log levels
 
@@ -97,22 +137,22 @@ from, so styling and transport changes apply to the whole family.
 ## Timezones
 
 Timestamps are always 24-hour `HH:MM:SS`, formatted with the built-in `Intl`
-API — no `moment`, no extra dependency. Set the zone up front when you construct
-a `Logger`, or change it later on the one you already have:
+API — no `moment`, no extra dependency. Set the zone up front in
+`createLogger`, or change it later on the logger you already have:
 
 ```ts
-import { logger, Logger } from "@revxshafi/logger";
+import { logger, createLogger } from "@revxshafi/logger";
 
 logger.setTimezone("Asia/Dhaka");          // change the default logger in place
 logger.setTimezone();                      // no argument → back to the host zone
 
-const utc = new Logger({ timezone: "UTC" }); // or set it at construction time
+const utc = createLogger({ timezone: "UTC" }); // or set it at construction time
 ```
 
 `timezone` accepts any IANA zone (`"Asia/Dhaka"`, `"UTC"`, …) or `"local"`,
-which follows the host. Both `new Logger()` and a bare `setTimezone()` default
-to `"local"`. An invalid zone never crashes your app: the logger prints an
-error naming the bad zone and falls back to the host's local time.
+which follows the host. Both `createLogger()` and a bare `setTimezone()`
+default to `"local"`. An invalid zone never crashes your app: the logger prints
+an error naming the bad zone and falls back to the host's local time.
 
 ## Filtering by level
 
@@ -120,7 +160,7 @@ Set a minimum level and anything less severe is dropped before it reaches any
 transport. The default is `"trace"` — everything logs.
 
 ```ts
-const log = new Logger({ minLevel: "info" }); // set it at construction…
+const log = createLogger({ minLevel: "info" }); // set it at construction…
 log.debug("Not printed");
 log.info("Printed");
 
@@ -138,12 +178,17 @@ timestamp is dimmed, the badge takes the level's color, the context is dimmed,
 and the **message body stays your terminal's default color** so JSON and stack
 traces remain readable.
 
+Set styles up front in `createLogger({ levels: {...} })` (see
+[One-line configuration](#one-line-configuration)), or change them at runtime:
+
 ```ts
 logger.setLevelStyle("info", { color: "#00FFAA", display: "INFO*" });
 
 logger.listLevels();
 // { trace: {...}, debug: {...}, info: { color: "#00FFAA", display: "INFO*" }, ... }
 ```
+
+Both forms are partial: omitted fields keep their current value.
 
 ## Serialization
 
@@ -231,17 +276,22 @@ client.log.warn("Rate limited");
 - `addTransport(transport: Transport): void` — add a log sink
 - `attach(target, key?): void` — attach `target[key].<level>()` methods (default key `"logs"`); warns when overwriting an existing property and throws on unsafe keys like `"__proto__"`
 
-**Constructor:**
+**Construction:**
 
 ```ts
-new Logger({
-  timezone?: string,  // IANA zone or "local"
-  minLevel?: LogLevel // least severe level to log; default "trace"
+createLogger({
+  timezone?: string,   // IANA zone or "local"
+  minLevel?: LogLevel, // least severe level to log; default "trace"
+  levels?: Partial<Record<LogLevel, Partial<LevelConfig>>>, // style overrides
 });
+
+createLogger({ default: true }); // explicit defaults; ≡ createLogger()
+new Logger(options);             // same options, class form
 ```
 
-**Exports:** `Logger`, `logger` (the default instance), `ConsoleTransport`,
-`createDefaultLevels`, the `LOG_LEVELS` constant, and the types `LoggerOptions`,
+**Exports:** `createLogger`, `Logger`, `logger` (the default instance),
+`ConsoleTransport`, `createDefaultLevels`, the `LOG_LEVELS` constant, and the
+types `LoggerOptions`, `DefaultLoggerOptions`, `CreateLoggerOptions`,
 `LogLevel`, `LevelConfig`, `LogEntry`, `Transport`, `TimezoneAwareTransport`,
 `ConsoleTransportOptions`, and `TimezoneOption`.
 

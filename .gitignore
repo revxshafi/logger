@@ -12,3 +12,5 @@ skills-lock.json
 .config/
 .upm/
 .gitignore 
+.editorconfig
+.npmignore
