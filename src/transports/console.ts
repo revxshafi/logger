@@ -50,7 +50,7 @@ export class ConsoleTransport implements TimezoneAwareTransport {
     const context =
       entry.context !== undefined ? ` ${chalk.dim(`[${entry.context}]`)}` : "";
 
-    // Route by severity so warn/error/fatal hit stderr.
+    // route by severity => warn/error/fatal hit stderr
     const line = `${time} ${badge}${context} ${entry.message}`;
     if (entry.level === "error" || entry.level === "fatal") {
       console.error(line);

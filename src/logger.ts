@@ -2,6 +2,7 @@ import { inspect, types } from "node:util";
 import { createDefaultLevels, LOG_LEVELS } from "./levels";
 import { ConsoleTransport } from "./transports/console";
 import type {
+  CreateLoggerOptions,
   LevelConfig,
   LogEntry,
   LoggerOptions,
@@ -32,36 +33,32 @@ function serialize(data: unknown): string {
   if (typeof data === "string") {
     return data;
   }
-  // `types.isNativeError` also catches errors from other realms (workers, vm)
-  // that fail an `instanceof` check.
+  // errors from other realms (workers, vm) fail instanceof => also check isNativeError
   if (data instanceof Error || types.isNativeError(data)) {
-    // On V8 the stack already starts with "Error: <message>" — returning both
-    // would print the message twice.
+    // V8 stacks already start with "Error: <message>" => returning both prints it twice
     return data.stack ?? data.message;
   }
   if (typeof data === "bigint") {
-    // Match how `inspect` renders bigints nested inside objects.
+    // match how inspect renders bigints nested inside objects
     return `${data}n`;
   }
   if (data !== null && typeof data === "object") {
-    // JSON.stringify "succeeds" on Map/Set/RegExp and other class instances
-    // by collapsing them to "{}" — only trust it for plain objects and arrays.
+    // JSON.stringify collapses Map/Set/RegExp/class instances to "{}" => only
+    // trust it for plain objects and arrays
     const proto: unknown = Object.getPrototypeOf(data);
     const isPlain =
       Array.isArray(data) || proto === Object.prototype || proto === null;
     if (isPlain) {
       try {
-        // JSON.stringify returns undefined for e.g. { toJSON: () => undefined };
-        // treat that like a failure and fall through to inspect.
+        // stringify returns undefined for e.g. { toJSON: () => undefined } => fall through
         const json = JSON.stringify(data, null, 2);
         if (json !== undefined) {
           return json;
         }
       } catch {
-        // circular refs, BigInt, etc. => JSON.stringify throws; inspect handles them.
+        // circular refs etc. => let inspect handle it
       }
     }
-    // Show the object's fields instead of a useless "[object Object]" or "{}".
     return inspect(data, { depth: 4, breakLength: 80 });
   }
   return String(data);
@@ -91,6 +88,16 @@ export class Logger {
     }
 
     const levels = createDefaultLevels();
+    if (options?.levels) {
+      for (const level of LOG_LEVELS) {
+        const style = options.levels[level];
+        const base = levels.get(level);
+        if (style && base) {
+          // partial override => omitted fields keep the default color/display
+          levels.set(level, { ...base, ...style });
+        }
+      }
+    }
     this.core = {
       levels,
       transports: [new ConsoleTransport({ timezone: options?.timezone, levels })],
@@ -162,8 +169,7 @@ export class Logger {
   }
 
   listLevels(): Record<LogLevel, LevelConfig> {
-    // Seed with defaults so the return type is honest even if the shared map
-    // were ever missing an entry, then overlay the current styles.
+    // seed with defaults => return type stays honest even if the shared map lost an entry
     const out = {} as Record<LogLevel, LevelConfig>;
     const defaults = createDefaultLevels();
     for (const level of LOG_LEVELS) {
@@ -197,7 +203,7 @@ export class Logger {
       logs[level] = (message: unknown, context?: string): void =>
         this.emit(level, message, context);
     }
-    // defineProperty writes an own property even for exotic keys.
+    // defineProperty => always an own property, even for exotic keys
     Object.defineProperty(target, key, {
       value: logs,
       writable: true,
@@ -209,25 +215,40 @@ export class Logger {
   // --- Internals ------------------------------------------------------------
 
   private emit(level: LogLevel, message: unknown, context?: string): void {
-    // Drop anything below the family-wide minimum level.
     if (LOG_LEVELS.indexOf(level) < LOG_LEVELS.indexOf(this.core.minLevel)) {
       return;
     }
     const entry: LogEntry = {
       level,
       message: serialize(message),
-      // a per-call context overrides the scoped one; fall back to the scope
+      // per-call context wins over the scoped one
       context: normalizeContext(context) ?? normalizeContext(this.context),
       timestamp: new Date(),
     };
     for (const transport of this.core.transports) {
-      // a logging call must never crash the host app, and one broken sink
-      // must not stop the others => swallow per-transport failures
+      // a logging call must never crash the host, and one broken sink must
+      // not stop the others => swallow per-transport failures
       try {
         transport.write(entry);
       } catch {
-        // nothing safe to do here; a throw would defeat the purpose
+        // nothing safe to do here
       }
     }
   }
+}
+
+/**
+ * One-line, fully-configured logger:
+ *
+ * ```ts
+ * const logger = createLogger({ timezone: "UTC", minLevel: "info", levels: { info: { color: "#00FFAA" } } });
+ * const plain  = createLogger({ default: true }); // ≡ createLogger()
+ * ```
+ */
+export function createLogger(options?: CreateLoggerOptions): Logger {
+  if (options?.default) {
+    return new Logger();
+  }
+  // { default: true } was narrowed away above => this is a plain config
+  return new Logger(options);
 }

@@ -21,6 +21,8 @@ export interface LevelConfig {
 export type TimezoneOption = string;
 
 export interface LoggerOptions {
+  /** See {@link DefaultLoggerOptions} — `default: true` excludes overrides. */
+  default?: never;
   /** IANA zone e.g. "Asia/Dhaka", or "local" (default). */
   timezone?: TimezoneOption;
   /**
@@ -28,7 +30,29 @@ export interface LoggerOptions {
    * Defaults to "trace" (log everything).
    */
   minLevel?: LogLevel;
+  /**
+   * Per-level style overrides, merged onto the defaults — override only the
+   * levels (and only the fields) you care about:
+   * `{ info: { color: "#00FFAA", display: "INFO*" } }`
+   */
+  levels?: Partial<Record<LogLevel, Partial<LevelConfig>>>;
 }
+
+/**
+ * Explicit opt-in to the default configuration:
+ * `createLogger({ default: true })` ≡ `createLogger()`. The `never` fields
+ * make it a compile-time error to combine `default: true` with overrides,
+ * so a config can't claim to be "default" while changing things.
+ */
+export interface DefaultLoggerOptions {
+  default: true;
+  timezone?: never;
+  minLevel?: never;
+  levels?: never;
+}
+
+/** What `createLogger` accepts: nothing, a config object, or `{ default: true }`. */
+export type CreateLoggerOptions = LoggerOptions | DefaultLoggerOptions;
 
 /** A single, fully-resolved log record handed to every transport. */
 export interface LogEntry {

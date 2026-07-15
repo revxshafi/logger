@@ -2,7 +2,14 @@
  * Smoke test for @revxshafi/logger — exercises every feature in the spec.
  * Run with: npm run verify
  */
-import { Logger, logger, ConsoleTransport, type LogEntry, type Transport } from "./src/index";
+import {
+  Logger,
+  createLogger,
+  logger,
+  ConsoleTransport,
+  type LogEntry,
+  type Transport,
+} from "./src/index";
 
 console.log("=== All six levels ===");
 logger.trace("Detailed diagnostic information");
@@ -42,7 +49,7 @@ switchable.setTimezone();
 switchable.info("Bare setTimezone() resets to local");
 
 console.log("\n=== Edge: invalid timezone reports an error and falls back to local ===");
-const badZone = new Logger({ timezone: "Asia/Dhakaa" }); // typo — must not crash
+const badZone = new Logger({ timezone: "Asia/Dhakaa" }); // typo => must not crash
 badZone.info("Still logging after an invalid constructor timezone");
 badZone.setTimezone("Not/AZone"); // must not crash either
 badZone.info("Still logging after an invalid setTimezone()");
@@ -151,10 +158,31 @@ try {
 } catch (e) {
   console.log("Threw as expected:", (e as Error).message);
 }
-logger.attach(client, "logs"); // second attach to the same key → warns, still works
+logger.attach(client, "logs"); // second attach to the same key => warns, still works
 (client.logs as Record<string, (m: unknown) => void>).info("Re-attached after overwrite warning");
 
-// keeps ConsoleTransport referenced so the import isn't flagged unused
-void ConsoleTransport;
+console.log("\n=== createLogger(): one-line full config ===");
+const oneLiner = createLogger({
+  timezone: "UTC",
+  minLevel: "info",
+  levels: { info: { color: "#00FFAA", display: "INFO*" } },
+});
+oneLiner.debug("❌ should be dropped (minLevel is info)");
+oneLiner.info("Styled INFO* badge, UTC timestamp, one-line setup");
+oneLiner.warn("Untouched levels keep their default style");
+
+console.log("\n=== createLogger({ default: true }) ≡ createLogger() ===");
+const viaFlag = createLogger({ default: true });
+const viaEmpty = createLogger();
+viaFlag.info("From createLogger({ default: true })");
+viaEmpty.info("From createLogger()");
+const same =
+  JSON.stringify(viaFlag.listLevels()) === JSON.stringify(viaEmpty.listLevels());
+console.log(same ? "Identical default level styles ✔" : "❌ defaults differ");
+
+console.log("\n=== createLogger(): partial style override keeps omitted fields ===");
+const partial = createLogger({ levels: { error: { display: "ERR!" } } });
+partial.error("Display overridden to ERR!, color still the default red");
+console.log("error style:", partial.listLevels().error);
 
 console.log("\n✅ Verify script completed.");
