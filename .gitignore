@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.DS_Store
+dist/
+.env
+.local
+.replit
+.claude-data
+.claude/
+skills-lock.json
+.cache/
+.config/
+.upm/

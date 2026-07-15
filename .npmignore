@@ -1,0 +1,13 @@
+src/
+test/
+examples/
+verify.ts
+tsup.config.ts
+tsconfig.json
+*.log
+.cache
+node_modules
+.upm
+.local
+.replit
+.editorconfig

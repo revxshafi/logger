@@ -1,0 +1,69 @@
+{
+  "name": "@revxshafi/logger",
+  "version": "1.0.0",
+  "description": "Flexible, colorful, and easy-to-use logging for Node.js — fixed log levels, context tags, scoped loggers, and pluggable transports.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "verify": "tsx verify.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "logger",
+    "logging",
+    "typescript",
+    "chalk",
+    "colorful",
+    "console",
+    "timestamp",
+    "context",
+    "scoped",
+    "transport",
+    "nodejs",
+    "debug"
+  ],
+  "author": "revxshafi <reversalxp@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/revxshafi/logger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/revxshafi/logger/issues"
+  },
+  "homepage": "https://github.com/revxshafi/logger#readme",
+  "dependencies": {
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
