@@ -288,7 +288,9 @@ interface LogEntry {
 ```
 
 If one transport throws, the logger swallows the error and keeps going — a
-broken sink can't crash your app or silence the others.
+broken sink can't crash your app or silence the others. `ConsoleTransport`
+itself is defensive too: a hand-built entry with an invalid `Date` timestamp
+doesn't throw, the time simply renders as `--:--:--`.
 
 File, webhook, and database transports aren't bundled. The interface is here so
 you can add them without touching the core.
@@ -353,6 +355,19 @@ level strings), the `LOG_LEVELS` constant, and the
 types `LoggerOptions`, `DefaultLoggerOptions`, `CreateLoggerOptions`,
 `LogLevel`, `LevelConfig`, `LogEntry`, `Transport`, `TimezoneAwareTransport`,
 `ConsoleTransportOptions`, and `TimezoneOption`.
+
+## Development
+
+```bash
+npm test               # run the test suite (vitest)
+npm run test:coverage  # tests with coverage (100% enforced)
+npm run typecheck      # tsc --noEmit
+npm run build          # bundle ESM + CJS + types into dist/
+npm run verify         # visual demo of every feature
+```
+
+CI runs the same checks on Node 18, 20, and 22 for every push and pull
+request, plus `publint`, `@arethetypeswrong/cli`, and an `npm pack` dry run.
 
 ## License
 
