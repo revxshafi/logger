@@ -9,7 +9,8 @@ function buildFormatter(zone: string | undefined): Intl.DateTimeFormat {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    // h23 makes midnight render "00" instead of "24" (hour12: false alone is locale-dependent)
+    hourCycle: "h23",
     timeZone: zone,
   });
 }
@@ -17,20 +18,28 @@ function buildFormatter(zone: string | undefined): Intl.DateTimeFormat {
 export function createTimeFormatter(
   timezone: TimezoneOption = "local",
 ): (date: Date) => string {
-  // undefined => Intl uses the runtime's local zone
+  // Intl treats undefined as the runtime's local zone
   const zone = timezone === "local" ? undefined : timezone;
 
   let formatter: Intl.DateTimeFormat;
   try {
     formatter = buildFormatter(zone);
   } catch {
-    // unknown zone => Intl throws a RangeError; a typo must not crash the
+    // Intl throws a RangeError on unknown zones; a typo must not crash the
     // host app, so report it and fall back to local
     console.error(
-      `[logger] Invalid timezone "${timezone}" — falling back to the host's local zone.`,
+      `[logger] Invalid timezone "${timezone}" - falling back to the host's local zone.`,
     );
     formatter = buildFormatter(undefined);
   }
 
-  return (date: Date): string => formatter.format(date);
+  return (date: Date): string => {
+    // Intl throws on invalid dates; a transport fed a bad timestamp (e.g. a
+    // hand-built LogEntry with new Date(NaN)) should still produce a line
+    try {
+      return formatter.format(date);
+    } catch {
+      return "--:--:--";
+    }
+  };
 }

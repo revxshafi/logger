@@ -36,6 +36,21 @@ export interface LoggerOptions {
    * `{ info: { color: "#00FFAA", display: "INFO*" } }`
    */
   levels?: Partial<Record<LogLevel, Partial<LevelConfig>>>;
+  /**
+   * Switch console output to a minimal dev layout:
+   * `[ HH:MM:SS ] [PREFIX] message`, where the prefix is the context (or the
+   * level when there's no context) and the message body is colored. Meant as a
+   * personal preset; level styles and dimming don't apply in this mode.
+   */
+  dev?: boolean;
+  /** Chalk hex for the message body in dev mode. Defaults to `"#2277FF"`. */
+  devColor?: string;
+  /**
+   * Chalk hex for the message body in the normal format, which otherwise
+   * keeps the terminal's default color. In dev mode it acts as a fallback
+   * when `devColor` isn't set.
+   */
+  messageColor?: string;
 }
 
 /**
@@ -49,12 +64,21 @@ export interface DefaultLoggerOptions {
   timezone?: never;
   minLevel?: never;
   levels?: never;
+  dev?: never;
+  devColor?: never;
+  messageColor?: never;
 }
 
 /** What `createLogger` accepts: nothing, a config object, or `{ default: true }`. */
 export type CreateLoggerOptions = LoggerOptions | DefaultLoggerOptions;
 
-/** A single, fully-resolved log record handed to every transport. */
+/**
+ * A single, fully-resolved log record handed to every transport.
+ *
+ * Fields are **not sanitized**: `message` and `context` may contain ANSI
+ * escapes or control characters from untrusted input. `ConsoleTransport`
+ * sanitizes at write time; custom transports must decide for their own sink.
+ */
 export interface LogEntry {
   level: LogLevel;
   message: string;

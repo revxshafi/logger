@@ -3,6 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@revxshafi/logger)](https://www.npmjs.com/package/@revxshafi/logger)
 [![npm downloads](https://img.shields.io/npm/dt/@revxshafi/logger)](https://www.npmjs.com/package/@revxshafi/logger)
 [![license](https://img.shields.io/npm/l/@revxshafi/logger)](./LICENSE)
+[![CI](https://github.com/revxshafi/logger/actions/workflows/ci.yml/badge.svg)](https://github.com/revxshafi/logger/actions/workflows/ci.yml)
 
 A small, colorful logger for Node.js. Six fixed levels, context tags, scoped
 loggers, timezone-aware timestamps, and pluggable transports — nothing you have
@@ -21,6 +22,8 @@ types.
 npm install @revxshafi/logger
 ```
 
+Requires Node.js 18 or newer.
+
 ## Quick start
 
 ```ts
@@ -38,8 +41,11 @@ const { logger } = require("@revxshafi/logger");
 ```
 
 That's the whole setup. The exported `logger` is a ready-to-use instance with a
-console transport already wired up. Want your own configuration? Build the whole
-thing in one line with `createLogger`:
+console transport already wired up. Note that it's a **shared singleton**:
+every module (and every dependency) that imports it gets the same instance, so
+`setLevel`, `setLevelStyle`, and `addTransport` on it apply process-wide. Want
+your own isolated configuration? Build the whole thing in one line with
+`createLogger`:
 
 ```ts
 import { createLogger } from "@revxshafi/logger";
@@ -75,8 +81,9 @@ const logger = createLogger({ default: true }); // ≡ createLogger()
 ```
 
 `{ default: true }` can't be combined with other options — TypeScript rejects
-`createLogger({ default: true, timezone: "UTC" })` at compile time, so a config
-can't claim to be "default" while overriding things.
+`createLogger({ default: true, timezone: "UTC" })` at compile time, and the
+same call from JavaScript throws a `TypeError` at runtime, so a config can't
+claim to be "default" while overriding things.
 
 (`new Logger(options)` still works and takes the same options; `createLogger`
 is the recommended spelling.)
@@ -171,6 +178,11 @@ log.info("Not printed anymore");
 Scoped loggers share the minimum level with the logger they came from, so one
 `setLevel()` call quiets the whole family.
 
+Passing something that isn't a level — `setLevel("bogus")`, or an invalid
+`minLevel` / `levels` key in `createLogger` — throws a `TypeError` immediately
+rather than silently logging everything. Config mistakes are loud; only
+log-*call* errors are swallowed.
+
 ## Styling levels
 
 Every level has a color and a display label. Only the metadata is colored — the
@@ -189,6 +201,39 @@ logger.listLevels();
 ```
 
 Both forms are partial: omitted fields keep their current value.
+
+Colors must be `"#RGB"` or `"#RRGGBB"` hex strings. An invalid color never
+crashes or silently paints things black — the logger warns and keeps the
+level's default color instead.
+
+By default the message body keeps your terminal's default color. If you want it
+colored too, set `messageColor`:
+
+```ts
+const logger = createLogger({ messageColor: "#2277FF" });
+```
+
+## Dev format
+
+A minimal, personal preset — one flag swaps the console output for an
+old-school layout with a plain time, a single prefix slot, and a colored
+message body:
+
+```ts
+const logger = createLogger({ dev: true });
+
+logger.info("Application started");            // [ 12:30:15 ] [INFO] Application started
+logger.info("Connected", "MongoDB");           // [ 12:30:15 ] [MongoDB] Connected
+```
+
+The prefix is the context when there is one, otherwise the level. The message
+is colored `#2277FF`; override it with `devColor` (or `messageColor`, which
+`devColor` falls back to). Level styles and dimming don't apply in this mode —
+everything else (filtering, scoping, timezones, transports) works as usual.
+
+```ts
+const logger = createLogger({ dev: true, devColor: "#FF8800" });
+```
 
 ## Serialization
 
@@ -248,6 +293,16 @@ broken sink can't crash your app or silence the others.
 File, webhook, and database transports aren't bundled. The interface is here so
 you can add them without touching the core.
 
+### A note on untrusted input
+
+`ConsoleTransport` sanitizes what it prints: control characters and terminal
+escape sequences in logged data are stripped (SGR color codes are kept, and
+`\t`/`\n`/`\r` survive in the message body), so logging user input can't clear
+the consumer's screen, retitle the window, or forge log lines. The `LogEntry`
+handed to **custom** transports is intentionally raw — a file or database sink
+may want the original bytes — so sanitize there yourself if your sink is a
+terminal.
+
 ## Attaching to an object
 
 Handy when you pass a single client object around (Discord bots, for one) and
@@ -280,9 +335,12 @@ client.log.warn("Rate limited");
 
 ```ts
 createLogger({
-  timezone?: string,   // IANA zone or "local"
-  minLevel?: LogLevel, // least severe level to log; default "trace"
+  timezone?: string,     // IANA zone or "local"
+  minLevel?: LogLevel,   // least severe level to log; default "trace"
   levels?: Partial<Record<LogLevel, Partial<LevelConfig>>>, // style overrides
+  dev?: boolean,         // minimal [ time ] [prefix] message layout
+  devColor?: string,     // message color in dev mode; default "#2277FF"
+  messageColor?: string, // message color in the normal format
 });
 
 createLogger({ default: true }); // explicit defaults; ≡ createLogger()
@@ -290,7 +348,8 @@ new Logger(options);             // same options, class form
 ```
 
 **Exports:** `createLogger`, `Logger`, `logger` (the default instance),
-`ConsoleTransport`, `createDefaultLevels`, the `LOG_LEVELS` constant, and the
+`ConsoleTransport`, `createDefaultLevels`, `isLogLevel` (runtime guard for
+level strings), the `LOG_LEVELS` constant, and the
 types `LoggerOptions`, `DefaultLoggerOptions`, `CreateLoggerOptions`,
 `LogLevel`, `LevelConfig`, `LogEntry`, `Transport`, `TimezoneAwareTransport`,
 `ConsoleTransportOptions`, and `TimezoneOption`.
