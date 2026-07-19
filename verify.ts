@@ -49,7 +49,7 @@ switchable.setTimezone();
 switchable.info("Bare setTimezone() resets to local");
 
 console.log("\n=== Edge: invalid timezone reports an error and falls back to local ===");
-const badZone = new Logger({ timezone: "Asia/Dhakaa" }); // typo => must not crash
+const badZone = new Logger({ timezone: "Asia/Dhakaa" }); // intentional typo, must not crash
 badZone.info("Still logging after an invalid constructor timezone");
 badZone.setTimezone("Not/AZone"); // must not crash either
 badZone.info("Still logging after an invalid setTimezone()");
@@ -158,7 +158,7 @@ try {
 } catch (e) {
   console.log("Threw as expected:", (e as Error).message);
 }
-logger.attach(client, "logs"); // second attach to the same key => warns, still works
+logger.attach(client, "logs"); // second attach to the same key warns but still works
 (client.logs as Record<string, (m: unknown) => void>).info("Re-attached after overwrite warning");
 
 console.log("\n=== createLogger(): one-line full config ===");
@@ -184,5 +184,22 @@ console.log("\n=== createLogger(): partial style override keeps omitted fields =
 const partial = createLogger({ levels: { error: { display: "ERR!" } } });
 partial.error("Display overridden to ERR!, color still the default red");
 console.log("error style:", partial.listLevels().error);
+
+console.log("\n=== Dev format: [ time ] [prefix] colored message ===");
+const dev = createLogger({ dev: true });
+dev.info("No context, so the level fills the prefix slot");
+dev.info("Context takes the prefix slot", "MongoDB");
+dev.error("Errors keep the same layout (and still hit stderr)");
+dev.scope("Cache").info("Scoped context lands in the prefix too");
+
+console.log("\n=== Dev format: devColor override ===");
+const devOrange = createLogger({ dev: true, devColor: "#FF8800" });
+devOrange.info("Message body in #FF8800 instead of the default blue");
+
+console.log("\n=== messageColor: colored body in the normal format ===");
+const tinted = createLogger({ messageColor: "#2277FF" });
+tinted.info("Normal layout, message body in #2277FF");
+const devViaFallback = createLogger({ dev: true, messageColor: "#00CC88" });
+devViaFallback.info("Dev mode falls back to messageColor when devColor is unset");
 
 console.log("\n✅ Verify script completed.");

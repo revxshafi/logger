@@ -5,6 +5,8 @@ export default defineConfig({
   format: ["esm", "cjs"],
   dts: true,
   clean: true,
-  sourcemap: true,
+  // sourcemaps pointed at ../src, which never ships in the tarball, so they
+  // were broken for every consumer and ~40kB of dead weight
+  sourcemap: false,
   target: "es2021",
 });

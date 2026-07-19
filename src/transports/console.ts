@@ -1,5 +1,7 @@
 import chalk from "chalk";
+import { checkColor, styleHex } from "../color";
 import { createDefaultLevels } from "../levels";
+import { sanitizeInline, sanitizeMessage } from "../sanitize";
 import { createTimeFormatter } from "../timestamp";
 import type {
   LevelConfig,
@@ -17,6 +19,12 @@ export interface ConsoleTransportOptions {
    * fresh copy of the defaults.
    */
   levels?: Map<LogLevel, LevelConfig>;
+  /** Minimal `[ time ] [prefix] message` layout — see `LoggerOptions.dev`. */
+  dev?: boolean;
+  /** Message color in dev mode; defaults to `"#2277FF"`. */
+  devColor?: string;
+  /** Message color in the normal format; dev-mode fallback when `devColor` is unset. */
+  messageColor?: string;
 }
 
 /**
@@ -28,10 +36,19 @@ export interface ConsoleTransportOptions {
 export class ConsoleTransport implements TimezoneAwareTransport {
   private formatTime: (date: Date) => string;
   private readonly levels: Map<LogLevel, LevelConfig>;
+  private readonly dev: boolean;
+  private readonly devColor: string;
+  private readonly messageColor?: string;
 
   constructor(options: ConsoleTransportOptions = {}) {
     this.formatTime = createTimeFormatter(options.timezone);
     this.levels = options.levels ?? createDefaultLevels();
+    this.dev = options.dev ?? false;
+    // validate at the boundary so chalk.hex never sees junk (it throws on
+    // undefined and renders invalid strings as black)
+    const messageColor = checkColor(options.messageColor, "messageColor");
+    this.devColor = checkColor(options.devColor, "devColor") ?? messageColor ?? "#2277FF";
+    this.messageColor = messageColor;
   }
 
   /** Swap the timezone at runtime; rebuilds the underlying `Intl` formatter. */
@@ -40,18 +57,29 @@ export class ConsoleTransport implements TimezoneAwareTransport {
   }
 
   write(entry: LogEntry): void {
-    const time = chalk.dim(`[${this.formatTime(entry.timestamp)}]`);
-
     const config = this.levels.get(entry.level);
-    const display = config?.display ?? entry.level.toUpperCase();
-    const color = config?.color ?? "#AAAAAA";
-    const badge = chalk.hex(color)(`[${display}]`);
-
+    // entry fields arrive raw (custom transports get untouched data); this is
+    // the terminal boundary, so sanitize everything user-controlled here
+    const message = sanitizeMessage(entry.message);
+    const display = sanitizeInline(config?.display ?? entry.level.toUpperCase());
     const context =
-      entry.context !== undefined ? ` ${chalk.dim(`[${entry.context}]`)}` : "";
+      entry.context !== undefined ? sanitizeInline(entry.context) : undefined;
 
-    // route by severity => warn/error/fatal hit stderr
-    const line = `${time} ${badge}${context} ${entry.message}`;
+    let line: string;
+    if (this.dev) {
+      // the context takes the single prefix slot, the level fills in when absent
+      const prefix = context ?? display;
+      line = `[ ${this.formatTime(entry.timestamp)} ] [${prefix}] ${styleHex(this.devColor, "#2277FF", message)}`;
+    } else {
+      const time = chalk.dim(`[${this.formatTime(entry.timestamp)}]`);
+      const badge = styleHex(config?.color, "#AAAAAA", `[${display}]`);
+      const contextTag = context !== undefined ? ` ${chalk.dim(`[${context}]`)}` : "";
+      const body = this.messageColor
+        ? styleHex(this.messageColor, "#AAAAAA", message)
+        : message;
+      line = `${time} ${badge}${contextTag} ${body}`;
+    }
+
     if (entry.level === "error" || entry.level === "fatal") {
       console.error(line);
     } else if (entry.level === "warn") {
