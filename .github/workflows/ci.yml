@@ -18,14 +18,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
+          registry-url: https://registry.npmjs.org/
           cache: npm
-      # Pin a recent npm: the runner's bundled npm can crash on a cold cache
-      # with "Exit handler never called!" during `npm ci`.
-      - run: npm install -g npm@11
-      # --include=dev guards against NODE_ENV=production skipping devDependencies
-      # (which makes typecheck fail with "Cannot find module 'vitest'"); one retry
-      # absorbs transient registry blips.
-      - run: npm ci --include=dev || npm ci --include=dev
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build
