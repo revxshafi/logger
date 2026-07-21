@@ -74,9 +74,11 @@ function serialize(data: unknown): string {
     // so guard it and fall back to a static string.
     try {
       return inspect(data, { depth: 1 });
+      /* c8 ignore start -- whether inspect throws on a hostile error is Node-version-dependent */
     } catch {
       return "[unserializable value]";
     }
+    /* c8 ignore stop */
   }
 }
 
