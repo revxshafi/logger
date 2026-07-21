@@ -1,6 +1,6 @@
 {
   "name": "@revxshafi/logger",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Flexible, colorful, and easy-to-use logging for Node.js — fixed log levels, context tags, scoped loggers, and pluggable transports.",
   "type": "module",
   "main": "./dist/index.cjs",

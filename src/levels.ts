@@ -1,14 +1,14 @@
 import type { LevelConfig, LogLevel } from "./types";
 
 /** The six levels in severity order — handy for iteration. */
-export const LOG_LEVELS: readonly LogLevel[] = [
+export const LOG_LEVELS: readonly LogLevel[] = Object.freeze([
   "trace",
   "debug",
   "info",
   "warn",
   "error",
   "fatal",
-];
+]);
 
 /** Severity rank per level — precomputed so `emit` avoids `indexOf` per call. */
 export const SEVERITY: Record<LogLevel, number> = {
