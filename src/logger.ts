@@ -70,7 +70,13 @@ function serialize(data: unknown): string {
   } catch {
     // hostile values (a throwing stack getter, a revoked Proxy) land here;
     // inspect survives everything probed, rendering e.g. "<Revoked Proxy>"
-    return inspect(data, { depth: 1 });
+    try {
+      return inspect(data, { depth: 1 });
+      /* c8 ignore start */
+    } catch {
+      return "[unserializable value]";
+    }
+    /* c8 ignore stop */
   }
 }
 
