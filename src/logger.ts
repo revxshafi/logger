@@ -68,13 +68,11 @@ function serialize(data: unknown): string {
     }
     return String(data);
   } catch {
-    // hostile values (a throwing stack getter, a revoked Proxy) land here.
-    // inspect renders most of them (e.g. "<Revoked Proxy>"), but on Node < 24
-    // inspecting an Error-shaped object re-triggers the throwing stack getter,
-    // so guard it and fall back to a static string.
+    // hostile values (a throwing stack getter, a revoked Proxy) land here;
+    // inspect survives everything probed, rendering e.g. "<Revoked Proxy>"
     try {
       return inspect(data, { depth: 1 });
-      /* c8 ignore start -- whether inspect throws on a hostile error is Node-version-dependent */
+      /* c8 ignore start */
     } catch {
       return "[unserializable value]";
     }
