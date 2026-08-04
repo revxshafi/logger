@@ -38,13 +38,21 @@ export interface LoggerOptions {
   levels?: Partial<Record<LogLevel, Partial<LevelConfig>>>;
   /**
    * Switch console output to a minimal dev layout:
-   * `[ HH:MM:SS ] [PREFIX] message`, where the prefix is the context (or the
-   * level when there's no context) and the message body is colored. Meant as a
+   * `[ DD-MM-YYYY HH:MM:SS ] [PREFIX] message`, where the timestamp is green,
+   * the prefix is a background-colored badge holding the context (or the level
+   * when there's no context), and the message body is colored. Meant as a
    * personal preset; level styles and dimming don't apply in this mode.
    */
   dev?: boolean;
   /** Chalk hex for the message body in dev mode. Defaults to `"#2277FF"`. */
   devColor?: string;
+  /** Chalk hex for the dev-mode timestamp. Defaults to `"#AAFF22"`. */
+  timeColor?: string;
+  /**
+   * Prefix timestamps with the date: `DD-MM-YYYY HH:MM:SS` instead of
+   * `HH:MM:SS`. Defaults to `true` in dev mode and `false` otherwise.
+   */
+  showDate?: boolean;
   /**
    * Chalk hex for the message body in the normal format, which otherwise
    * keeps the terminal's default color. In dev mode it acts as a fallback
@@ -66,6 +74,8 @@ export interface DefaultLoggerOptions {
   levels?: never;
   dev?: never;
   devColor?: never;
+  timeColor?: never;
+  showDate?: never;
   messageColor?: never;
 }
 

@@ -216,23 +216,38 @@ const logger = createLogger({ messageColor: "#2277FF" });
 ## Dev format
 
 A minimal, personal preset — one flag swaps the console output for an
-old-school layout with a plain time, a single prefix slot, and a colored
-message body:
+old-school layout with a green date-and-time stamp, a background-colored badge,
+and a colored message body:
 
 ```ts
 const logger = createLogger({ dev: true });
 
-logger.info("Application started");            // [ 12:30:15 ] [INFO] Application started
-logger.info("Connected", "MongoDB");           // [ 12:30:15 ] [MongoDB] Connected
+logger.info("Application started");            // [ 01-01-2024 12:30:15 ] [INFO ] Application started
+logger.info("Connected", "MongoDB");           // [ 01-01-2024 12:30:15 ] [Mongo] Connected
 ```
 
-The prefix is the context when there is one, otherwise the level. The message
-is colored `#2277FF`; override it with `devColor` (or `messageColor`, which
-`devColor` falls back to). Level styles and dimming don't apply in this mode —
-everything else (filtering, scoping, timezones, transports) works as usual.
+The prefix is the context when there is one, otherwise the level, padded and
+truncated to five characters so the messages line up. Its background uses the
+level's color, with black or white text picked automatically for contrast.
+
+The timestamp is `#AAFF22` (override with `timeColor`) and the message is
+`#2277FF` (override with `devColor`, or `messageColor`, which `devColor` falls
+back to). Dimming doesn't apply in this mode — everything else (filtering,
+scoping, timezones, transports) works as usual.
 
 ```ts
-const logger = createLogger({ dev: true, devColor: "#FF8800" });
+const logger = createLogger({ dev: true, devColor: "#FF8800", timeColor: "#00CCFF" });
+```
+
+### Showing the date
+
+`dev: true` includes the date by default. The normal format shows the time
+only, but `showDate` works in both — turn it on for the normal format, or off
+in dev mode:
+
+```ts
+createLogger({ showDate: true });             // [01-01-2024 12:30:15] [INFO] ...
+createLogger({ dev: true, showDate: false }); // [ 12:30:15 ] [INFO ] ...
 ```
 
 ## Serialization
@@ -340,8 +355,10 @@ createLogger({
   timezone?: string,     // IANA zone or "local"
   minLevel?: LogLevel,   // least severe level to log; default "trace"
   levels?: Partial<Record<LogLevel, Partial<LevelConfig>>>, // style overrides
-  dev?: boolean,         // minimal [ time ] [prefix] message layout
+  dev?: boolean,         // minimal [ date time ] [prefix] message layout
   devColor?: string,     // message color in dev mode; default "#2277FF"
+  timeColor?: string,    // timestamp color in dev mode; default "#AAFF22"
+  showDate?: boolean,    // prefix timestamps with DD-MM-YYYY; default: dev
   messageColor?: string, // message color in the normal format
 });
 

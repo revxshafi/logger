@@ -83,14 +83,77 @@ describe("dev format", () => {
   it("renders the minimal layout with the default color", () => {
     const transport = new ConsoleTransport({ timezone: "UTC", dev: true });
     transport.write(entry());
-    expect(strip(lastLine())).toBe("[ 12:00:00 ] [INFO] hello");
+    expect(strip(lastLine())).toBe("[ 01-01-2024 12:00:00 ] [INFO ] hello");
     expect(lastLine()).toContain("38;2;34;119;255");
+  });
+
+  it("colors the timestamp and gives the badge a background", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC", dev: true });
+    transport.write(entry());
+    expect(lastLine()).toContain("38;2;170;255;34");
+    expect(lastLine()).toContain("48;2;74;163;255");
+  });
+
+  it("honours a custom timeColor", () => {
+    const transport = new ConsoleTransport({
+      timezone: "UTC",
+      dev: true,
+      timeColor: "#FF0000",
+    });
+    transport.write(entry());
+    expect(lastLine()).toContain("38;2;255;0;0");
+  });
+
+  it("pads and truncates the prefix to a fixed width", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC", dev: true });
+    transport.write(entry({ context: "db" }));
+    expect(strip(lastLine())).toBe("[ 01-01-2024 12:00:00 ] [db   ] hello");
+    transport.write(entry({ context: "verylongcontext" }));
+    expect(strip(lastLine())).toBe("[ 01-01-2024 12:00:00 ] [veryl] hello");
+  });
+
+  it("picks black text on light badges and white on dark", () => {
+    const light = new ConsoleTransport({
+      timezone: "UTC",
+      dev: true,
+      levels: new Map<LogLevel, LevelConfig>([["info", { color: "#FFFFFF", display: "INFO" }]]),
+    });
+    light.write(entry());
+    expect(lastLine()).toContain("38;2;0;0;0");
+
+    const dark = new ConsoleTransport({
+      timezone: "UTC",
+      dev: true,
+      levels: new Map<LogLevel, LevelConfig>([["info", { color: "#000000", display: "INFO" }]]),
+    });
+    dark.write(entry());
+    expect(lastLine()).toContain("38;2;255;255;255");
+  });
+
+  it("expands shorthand hex badges", () => {
+    const transport = new ConsoleTransport({
+      timezone: "UTC",
+      dev: true,
+      levels: new Map<LogLevel, LevelConfig>([["info", { color: "#FFF", display: "INFO" }]]),
+    });
+    transport.write(entry());
+    expect(lastLine()).toContain("48;2;255;255;255");
+  });
+
+  it("falls back when the badge color is invalid", () => {
+    const transport = new ConsoleTransport({
+      timezone: "UTC",
+      dev: true,
+      levels: new Map<LogLevel, LevelConfig>([["info", { color: "nope", display: "INFO" }]]),
+    });
+    transport.write(entry());
+    expect(lastLine()).toContain("48;2;170;170;170");
   });
 
   it("prefers the context over the level in the prefix slot", () => {
     const transport = new ConsoleTransport({ timezone: "UTC", dev: true });
     transport.write(entry({ context: "boot" }));
-    expect(strip(lastLine())).toBe("[ 12:00:00 ] [boot] hello");
+    expect(strip(lastLine())).toBe("[ 01-01-2024 12:00:00 ] [boot ] hello");
   });
 
   it("resolves devColor, then messageColor, then the default", () => {
@@ -112,6 +175,39 @@ describe("dev format", () => {
     expect(warnSpy).toHaveBeenCalledOnce();
     transport.write(entry());
     expect(lastLine()).toContain("38;2;34;119;255");
+  });
+
+  it("renders a placeholder for an invalid timestamp", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC", dev: true });
+    transport.write(entry({ timestamp: new Date(NaN) }));
+    expect(strip(lastLine())).toBe("[ ----- ---- --:--:-- ] [INFO ] hello");
+  });
+});
+
+describe("showDate", () => {
+  it("stays off in the normal format by default", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC" });
+    transport.write(entry());
+    expect(strip(lastLine())).toBe("[12:00:00] [INFO] hello");
+  });
+
+  it("adds the date to the normal format when enabled", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC", showDate: true });
+    transport.write(entry());
+    expect(strip(lastLine())).toBe("[01-01-2024 12:00:00] [INFO] hello");
+  });
+
+  it("can be turned off in dev mode", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC", dev: true, showDate: false });
+    transport.write(entry());
+    expect(strip(lastLine())).toBe("[ 12:00:00 ] [INFO ] hello");
+  });
+
+  it("survives a timezone swap", () => {
+    const transport = new ConsoleTransport({ timezone: "UTC", showDate: true });
+    transport.setTimezone("Asia/Kolkata");
+    transport.write(entry());
+    expect(strip(lastLine())).toBe("[01-01-2024 17:30:00] [INFO] hello");
   });
 });
 

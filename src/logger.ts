@@ -136,6 +136,8 @@ export class Logger {
           dev: options?.dev,
           devColor: options?.devColor,
           messageColor: options?.messageColor,
+          timeColor: options?.timeColor,
+          showDate: options?.showDate,
         }),
       ],
       minLevel: options?.minLevel ?? "trace",
