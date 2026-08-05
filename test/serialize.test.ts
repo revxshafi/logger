@@ -1,98 +1,92 @@
-import { runInNewContext } from "node:vm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Logger } from "../src/logger";
-import type { LogEntry } from "../src/types";
+import { describe, expect, it } from "vitest";
+import { serialize } from "../src/internal/serialize";
 
-let entries: LogEntry[];
-let log: Logger;
-
-beforeEach(() => {
-  vi.spyOn(console, "log").mockImplementation(() => {});
-  vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
-  entries = [];
-  log = new Logger();
-  log.addTransport({ write: (entry) => entries.push(entry) });
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-function serialized(value: unknown): string {
-  log.info(value);
-  return entries[entries.length - 1].message;
-}
-
-describe("serialize (via Logger)", () => {
+describe("serialize", () => {
   it("passes strings through untouched", () => {
-    expect(serialized("plain")).toBe("plain");
+    expect(serialize("hello")).toBe("hello");
   });
 
-  it("uses the stack for errors, falling back to the message", () => {
-    const err = new Error("boom");
-    expect(serialized(err)).toBe(err.stack);
-    const stackless = new Error("no stack");
-    stackless.stack = undefined;
-    expect(serialized(stackless)).toBe("no stack");
+  it("renders primitives the way a reader expects", () => {
+    expect(serialize(42)).toBe("42");
+    expect(serialize(true)).toBe("true");
+    expect(serialize(null)).toBe("null");
+    expect(serialize(undefined)).toBe("undefined");
+    expect(serialize(10n)).toBe("10n");
+    expect(serialize(Symbol("tag"))).toBe("Symbol(tag)");
   });
 
-  it("recognizes cross-realm errors", () => {
-    const foreign: unknown = runInNewContext("new Error('other realm')");
-    expect(foreign instanceof Error).toBe(false);
-    expect(serialized(foreign)).toContain("other realm");
+  it("prints an error's stack rather than duplicating its message", () => {
+    const error = new Error("kaboom");
+    const text = serialize(error);
+    expect(text).toContain("Error: kaboom");
+    expect(text.indexOf("kaboom")).toBe(text.lastIndexOf("kaboom"));
   });
 
-  it("renders bigints with the n suffix", () => {
-    expect(serialized(123n)).toBe("123n");
+  it("falls back to the message when there is no stack", () => {
+    const error = new Error("no stack");
+    error.stack = undefined;
+    expect(serialize(error)).toBe("no stack");
   });
 
-  it("pretty-prints plain objects and arrays as JSON", () => {
-    expect(serialized({ a: 1 })).toBe(JSON.stringify({ a: 1 }, null, 2));
-    expect(serialized([1, 2])).toBe(JSON.stringify([1, 2], null, 2));
-    expect(serialized(Object.assign(Object.create(null), { x: 1 }))).toContain('"x": 1');
+  it("shows a cause chain, which a stack alone would hide", () => {
+    const error = new Error("outer", { cause: new Error("inner") });
+    expect(serialize(error)).toContain("inner");
   });
 
-  it("falls back to inspect when JSON.stringify throws or returns undefined", () => {
-    const circular: Record<string, unknown> = {};
-    circular.self = circular;
-    expect(serialized(circular)).toContain("[Circular");
-    expect(serialized({ big: 10n })).toContain("10n");
-    expect(serialized({ toJSON: () => undefined })).toContain("toJSON");
+  it("shows the members of an AggregateError", () => {
+    const error = new AggregateError([new Error("first")], "many");
+    expect(serialize(error)).toContain("first");
   });
 
-  it("uses inspect for non-plain objects", () => {
-    expect(serialized(new Map([["k", "v"]]))).toContain("Map");
-    class Widget {
-      size = 3;
-    }
-    expect(serialized(new Widget())).toContain("Widget");
-  });
-
-  it("stringifies remaining primitives", () => {
-    expect(serialized(42)).toBe("42");
-    expect(serialized(true)).toBe("true");
-    expect(serialized(null)).toBe("null");
-    expect(serialized(undefined)).toBe("undefined");
-    expect(serialized(Symbol("tag"))).toBe("Symbol(tag)");
-  });
-
-  it("survives an error whose stack getter throws", () => {
-    const hostile: unknown = Object.create(Error.prototype, {
-      stack: {
-        get() {
-          throw new Error("gotcha");
-        },
+  it("ignores a hostile property getter while probing an error", () => {
+    const error = new Error("hostile");
+    Object.defineProperty(error, "cause", {
+      get() {
+        throw new Error("nope");
       },
     });
-    expect(() => log.info(hostile)).not.toThrow();
-    expect(typeof entries[0].message).toBe("string");
+    expect(serialize(error)).toContain("hostile");
   });
 
-  it("survives a revoked proxy", () => {
-    const { proxy, revoke } = Proxy.revocable({}, {});
-    revoke();
-    expect(() => log.info(proxy)).not.toThrow();
-    expect(entries[0].message).toContain("Revoked");
+  it("pretty-prints plain objects and arrays", () => {
+    expect(serialize({ a: 1 })).toBe('{\n  "a": 1\n}');
+    expect(serialize([1, 2])).toBe("[\n  1,\n  2\n]");
+    expect(serialize(Object.create(null))).toBe("{}");
+  });
+
+  it("uses inspect for shapes JSON would flatten to {}", () => {
+    expect(serialize(new Map([["k", 1]]))).toContain("Map(1)");
+    expect(serialize(new Set([1]))).toContain("Set(1)");
+    expect(serialize(/ab+c/)).toBe("/ab+c/");
+  });
+
+  it("falls back to inspect when stringify refuses", () => {
+    // toJSON returning undefined makes JSON.stringify yield undefined
+    expect(serialize({ toJSON: () => undefined })).toContain("toJSON");
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(serialize(cyclic)).toContain("[Circular");
+    expect(serialize({ big: 1n })).toContain("1n");
+  });
+
+  it("survives a value that defeats every ordinary path", () => {
+    const revocable = Proxy.revocable({}, {});
+    revocable.revoke();
+    expect(() => serialize(revocable.proxy)).not.toThrow();
+  });
+
+  it("truncates a huge render and says how much was dropped", () => {
+    const text = serialize("x".repeat(100), { maxLength: 10 });
+    expect(text.startsWith("x".repeat(10))).toBe(true);
+    expect(text).toContain("[truncated 90 characters]");
+  });
+
+  it("treats maxLength 0 as no limit", () => {
+    expect(serialize("x".repeat(100), { maxLength: 0 })).toHaveLength(100);
+  });
+
+  it("honours the depth bound", () => {
+    const deep = { a: { b: { c: { d: { e: 1 } } } } };
+    expect(serialize(new Map([["deep", deep]]), { depth: 1 })).toContain("[Object]");
   });
 });

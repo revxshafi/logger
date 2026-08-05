@@ -1,11 +1,18 @@
-name: Node.js Package
+name: Publish
 
 on:
   release:
     types: [created]
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -14,12 +21,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build
+      - run: npm run lint:package
 
   publish-npm:
-    needs: build
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,4 +45,4 @@ jobs:
       # trusted publishing needs npm 11.5.1+; Node 22 bundles an older npm
       - run: npm install -g npm@latest
       - run: npm ci
-      - run: npm publish
+      - run: npm publish --provenance

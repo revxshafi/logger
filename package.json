@@ -1,7 +1,7 @@
 {
   "name": "@revxshafi/logger",
-  "version": "1.3.0",
-  "description": "Flexible, colorful, and easy-to-use logging for Node.js — fixed log levels, context tags, scoped loggers, and pluggable transports.",
+  "version": "2.0.0",
+  "description": "Fast, zero-dependency logging for Node.js — pretty and JSON formats, structured fields, child loggers, and pluggable transports.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -28,25 +28,30 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:package": "publint && attw --pack .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint:package": "publint && attw --pack .",
-    "verify": "tsx verify.ts",
-    "prepublishOnly": "npm run typecheck && npm run test && npm run build && npx publint && npx attw --pack ."
+    "bench": "tsx bench/index.ts",
+    "verify": "tsx examples/showcase.ts",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm run test && npm run build && npm run lint:package"
   },
   "keywords": [
     "logger",
     "logging",
     "typescript",
-    "chalk",
-    "colorful",
+    "json-logging",
+    "structured-logging",
     "console",
     "timestamp",
     "context",
-    "scoped",
+    "child-logger",
     "transport",
+    "zero-dependency",
     "nodejs",
+    "pino-alternative",
     "debug"
   ],
   "author": "revxshafi <reversalxp@gmail.com>",
@@ -59,17 +64,17 @@
     "url": "https://github.com/revxshafi/logger/issues"
   },
   "homepage": "https://github.com/revxshafi/logger#readme",
-  "dependencies": {
-    "chalk": "^4.1.2"
-  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^9.39.5",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^3.2.7",
+    "eslint": "^9.39.5",
     "publint": "^0.3.21",
     "tsup": "^8.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
+    "typescript-eslint": "^8.66.0",
     "vitest": "^3.2.7"
   },
   "engines": {

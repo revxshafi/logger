@@ -6,24 +6,58 @@ on:
   pull_request:
     branches: [main]
 
+# a new push to a PR makes the in-flight run pointless, so drop it
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# read-only by default, this workflow never writes anything back
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    name: lint & types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
   test:
+    name: test (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
+      # one Node version failing should not hide the result on the others
       fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [18, 20, 22, 24]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
-          registry-url: https://registry.npmjs.org/
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
       - run: npm run test:coverage
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npm run build
-      - run: npx publint
-      - run: npx attw --pack .
+      # publint checks the manifest, attw checks the types resolve under every
+      # module resolution mode a consumer might use
+      - run: npm run lint:package
       - run: npm pack --dry-run

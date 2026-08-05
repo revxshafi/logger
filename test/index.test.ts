@@ -1,34 +1,65 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  ConsoleTransport,
-  createDefaultLevels,
-  createLogger,
-  isLogLevel,
-  LOG_LEVELS,
-  Logger,
-  logger,
-} from "../src/index";
-
-beforeEach(() => {
-  vi.spyOn(console, "log").mockImplementation(() => {});
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+import { describe, expect, it } from "vitest";
+import * as api from "../src/index";
 
 describe("public surface", () => {
-  it("exports the expected API", () => {
-    expect(logger).toBeInstanceOf(Logger);
-    expect(createLogger).toBeTypeOf("function");
-    expect(ConsoleTransport).toBeTypeOf("function");
-    expect(createDefaultLevels).toBeTypeOf("function");
-    expect(isLogLevel).toBeTypeOf("function");
-    expect(LOG_LEVELS).toHaveLength(6);
+  it("exports the values a consumer builds on", () => {
+    for (const name of [
+      "Logger",
+      "createLogger",
+      "LogRecord",
+      "createDefaultLevels",
+      "isLevelThreshold",
+      "isLogLevel",
+      "LOG_LEVELS",
+      "SEVERITY",
+      "devFormat",
+      "jsonFormat",
+      "prettyFormat",
+      "ConsoleTransport",
+      "consoleTransport",
+      "MemoryTransport",
+      "memoryTransport",
+      "StreamTransport",
+      "streamTransport",
+      "setDiagnosticsHandler",
+      "setColorLevel",
+      "logger",
+    ]) {
+      expect(api, name).toHaveProperty(name);
+    }
   });
 
-  it("ships a working singleton", () => {
-    logger.info("singleton works");
-    expect(console.log).toHaveBeenCalledOnce();
+  it("exports nothing beyond that, new names are a deliberate act", () => {
+    expect(Object.keys(api).sort()).toEqual([
+      "ConsoleTransport",
+      "LOG_LEVELS",
+      "LogRecord",
+      "Logger",
+      "MemoryTransport",
+      "SEVERITY",
+      "StreamTransport",
+      "consoleTransport",
+      "createDefaultLevels",
+      "createLogger",
+      "devFormat",
+      "isLevelThreshold",
+      "isLogLevel",
+      "jsonFormat",
+      "logger",
+      "memoryTransport",
+      "prettyFormat",
+      "setColorLevel",
+      "setDiagnosticsHandler",
+      "streamTransport",
+    ]);
+  });
+
+  it("has no default export, so `import logger from` is a visible error", () => {
+    expect((api as Record<string, unknown>).default).toBeUndefined();
+  });
+
+  it("ships a ready-made singleton that logs", () => {
+    expect(api.logger).toBeInstanceOf(api.Logger);
+    expect(api.logger.level).toBe("trace");
   });
 });

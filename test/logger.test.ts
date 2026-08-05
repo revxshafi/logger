@@ -1,174 +1,592 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createLogger, Logger } from "../src/logger";
-import type {
-  LogEntry,
-  LogLevel,
-  TimezoneAwareTransport,
-  Transport,
-} from "../src/types";
+import { MemoryTransport } from "../src/transports/memory";
+import { StreamTransport } from "../src/transports/stream";
+import { captureDiagnostics, FakeStream, plain } from "./helpers";
+import type { LogEntry, Transport } from "../src/types";
 
-beforeEach(() => {
-  vi.spyOn(console, "log").mockImplementation(() => {});
-  vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-function capture(): { entries: LogEntry[]; transport: Transport } {
-  const entries: LogEntry[] = [];
-  return { entries, transport: { write: (entry) => entries.push(entry) } };
+/** A logger writing to a memory sink & nothing else. */
+function harness(options: Record<string, unknown> = {}) {
+  const sink = new MemoryTransport();
+  const logger = createLogger({ transports: [sink], ...options });
+  return {
+    sink,
+    logger,
+    last: (): LogEntry | undefined => sink.entries()[sink.size - 1],
+  };
 }
 
-describe("config validation", () => {
-  it("rejects an invalid minLevel", () => {
-    expect(() => new Logger({ minLevel: "bogus" as LogLevel })).toThrow(TypeError);
+describe("construction", () => {
+  it("attaches a console transport when no transports are named", () => {
+    const logger = createLogger();
+    expect(logger.listTransports()).toHaveLength(1);
   });
 
-  it("rejects unknown keys in levels", () => {
-    expect(
-      () => new Logger({ levels: { verbose: { color: "#FFF" } } as never }),
-    ).toThrow(TypeError);
+  it("does not attach one when transports are named", () => {
+    const { logger } = harness();
+    expect(logger.listTransports()).toHaveLength(1);
   });
 
-  it("rejects an invalid setLevel argument", () => {
-    const log = new Logger();
-    expect(() => log.setLevel("bogus" as LogLevel)).toThrow(TypeError);
+  it("attaches one alongside named transports when asked explicitly", () => {
+    const logger = createLogger({ transports: [new MemoryTransport()], console: {} });
+    expect(logger.listTransports()).toHaveLength(2);
   });
 
-  it("rejects an invalid setLevelStyle level", () => {
-    const log = new Logger();
-    expect(() => log.setLevelStyle("bogus" as LogLevel, {})).toThrow(TypeError);
+  it("attaches none when the console is switched off", () => {
+    expect(createLogger({ console: false }).listTransports()).toHaveLength(0);
   });
 
-  it("warns and keeps the default when a constructor level color is invalid", () => {
-    const log = new Logger({ levels: { info: { color: "#bad-ctor", display: "II" } } });
-    expect(console.warn).toHaveBeenCalledOnce();
-    const info = log.listLevels().info;
-    expect(info.color).toBe("#4AA3FF");
-    expect(info.display).toBe("II");
+  it("rejects an invalid minimum level rather than failing open", () => {
+    expect(() => createLogger({ minLevel: "verbose" as never })).toThrow(TypeError);
+    expect(() => createLogger({ minLevel: "verbose" as never })).toThrow(/expected one of/);
   });
 
-  it("merges partial style overrides onto defaults", () => {
-    const log = new Logger({ levels: { info: { display: "INFO*" } } });
-    const info = log.listLevels().info;
-    expect(info.display).toBe("INFO*");
-    expect(info.color).toBe("#4AA3FF");
+  it("rejects serialization bounds that would mangle output", () => {
+    expect(() => createLogger({ serialize: { depth: -1 } })).toThrow(/non-negative/);
+    expect(() => createLogger({ serialize: { maxLength: Number.NaN } })).toThrow(/non-negative/);
+    expect(() => createLogger({ serialize: { depth: "4" as never } })).toThrow(TypeError);
+  });
+
+  it("rejects an unknown level key instead of ignoring the style", () => {
+    expect(() => createLogger({ levels: { verbose: { color: "#FFF" } } as never })).toThrow(
+      /invalid key/,
+    );
+  });
+
+  it("reports the obsolete default option instead of honouring it", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      createLogger({ default: true, console: false } as never);
+      expect(diagnostics.codes()).toEqual(["deprecated-option"]);
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("is constructible directly as well as through the factory", () => {
+    expect(new Logger({ console: false })).toBeInstanceOf(Logger);
+  });
+});
+
+describe("emitting", () => {
+  it("records level, message and time", () => {
+    const { logger, last } = harness();
+    logger.info("hello");
+    expect(last()).toMatchObject({ level: "info", message: "hello" });
+    expect(last()!.timestamp).toBeInstanceOf(Date);
+  });
+
+  it("exposes all six levels", () => {
+    const { logger, sink } = harness();
+    logger.trace("a");
+    logger.debug("b");
+    logger.info("c");
+    logger.warn("d");
+    logger.error("e");
+    logger.fatal("f");
+    expect(sink.entries().map((entry) => entry.level)).toEqual([
+      "trace",
+      "debug",
+      "info",
+      "warn",
+      "error",
+      "fatal",
+    ]);
+  });
+
+  it("takes a context string or fields as the second argument", () => {
+    const { logger, sink } = harness();
+    logger.info("a", "db");
+    logger.info("b", { userId: 7 });
+    logger.info("c", "db", { userId: 7 });
+    const [first, second, third] = sink.entries();
+    expect(first).toMatchObject({ context: "db", fields: undefined });
+    expect(second).toMatchObject({ context: undefined, fields: { userId: 7 } });
+    expect(third).toMatchObject({ context: "db", fields: { userId: 7 } });
+  });
+
+  it("ignores a meta argument that is neither, but keeps the fields", () => {
+    const { logger, last } = harness();
+    logger.info("a", null as never, { userId: 7 });
+    expect(last()).toMatchObject({ context: undefined, fields: { userId: 7 } });
+  });
+
+  it("treats a blank context as no context", () => {
+    const { logger, last } = harness();
+    logger.info("a", "   ");
+    expect(last()!.context).toBeUndefined();
+  });
+
+  it("logs at a level chosen at runtime, ignoring an unknown one", () => {
+    const { logger, sink } = harness();
+    logger.log("warn", "a");
+    logger.log("verbose" as never, "b");
+    expect(sink.messages()).toEqual(["a"]);
+  });
+
+  it("calls a lazy message only when it will be logged", () => {
+    const build = vi.fn(() => "expensive");
+    const { logger, last } = harness({ minLevel: "info" });
+    logger.debug(build);
+    expect(build).not.toHaveBeenCalled();
+    logger.info(build);
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(last()!.message).toBe("expensive");
+  });
+
+  it("logs the failure when a lazy message throws", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const { logger, last } = harness();
+      logger.info(() => {
+        throw new Error("boom");
+      });
+      expect(diagnostics.codes()).toEqual(["lazy-message-error"]);
+      expect(last()!.message).toContain("boom");
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("passes a function that takes arguments through as a value", () => {
+    // only a zero argument thunk is treated as a lazy message
+    const { logger, last } = harness();
+    logger.info((x: number) => x);
+    expect(last()!.message).toContain("=>");
+  });
+
+  it("redacts configured keys at any depth", () => {
+    const { logger, last } = harness({ redact: ["password"] });
+    logger.info("login", { user: { name: "ada", password: "hunter2" } });
+    expect(last()!.fields).toEqual({ user: { name: "ada", password: "[redacted]" } });
   });
 });
 
 describe("level filtering", () => {
-  it("drops entries below minLevel and honors setLevel", () => {
-    const { entries, transport } = capture();
-    const log = new Logger({ minLevel: "warn" });
-    log.addTransport(transport);
-    log.info("dropped");
-    log.warn("kept");
-    log.error("kept");
-    log.fatal("kept");
-    expect(entries.map((e) => e.level)).toEqual(["warn", "error", "fatal"]);
-    log.setLevel("trace");
-    log.trace("now kept");
-    log.debug("also kept");
-    expect(entries).toHaveLength(5);
-  });
-});
-
-describe("scope and context", () => {
-  it("binds a context, with the per-call context winning", () => {
-    const { entries, transport } = capture();
-    const log = new Logger();
-    log.addTransport(transport);
-    const db = log.scope("db");
-    db.info("a");
-    db.info("b", "override");
-    log.info("c");
-    expect(entries.map((e) => e.context)).toEqual(["db", "override", undefined]);
+  it("drops calls below the threshold", () => {
+    const { logger, sink } = harness({ minLevel: "warn" });
+    logger.info("dropped");
+    logger.warn("kept");
+    expect(sink.messages()).toEqual(["kept"]);
   });
 
-  it("treats blank contexts as absent and re-scoping as replacement", () => {
-    const { entries, transport } = capture();
-    const log = new Logger();
-    log.addTransport(transport);
-    log.info("a", "   ");
-    log.scope("one").scope("two").info("b");
-    expect(entries[0].context).toBeUndefined();
-    expect(entries[1].context).toBe("two");
-  });
-});
-
-describe("transport handling", () => {
-  it("swallows transport errors and keeps writing to the rest", () => {
-    const { entries, transport } = capture();
-    const log = new Logger();
-    log.addTransport({
-      write: () => {
-        throw new Error("sink down");
+  it("does not render a message it will not log", () => {
+    const { logger } = harness({ minLevel: "error" });
+    const hostile = {
+      toString() {
+        throw new Error("must not be called");
       },
-    });
-    log.addTransport(transport);
-    expect(() => log.info("hi")).not.toThrow();
-    expect(entries).toHaveLength(1);
+    };
+    expect(() => logger.info(hostile)).not.toThrow();
   });
 
-  it("forwards setTimezone only to timezone-aware transports", () => {
-    const setTimezone = vi.fn();
-    const log = new Logger();
-    log.addTransport({ write: () => {} });
-    const aware: TimezoneAwareTransport = { write: () => {}, setTimezone };
-    log.addTransport(aware);
-    log.setTimezone("UTC");
-    expect(setTimezone).toHaveBeenCalledWith("UTC");
-    log.setTimezone();
-    expect(setTimezone).toHaveBeenLastCalledWith("local");
+  it("drops everything when silent", () => {
+    const { logger, sink } = harness({ minLevel: "silent" });
+    logger.fatal("dropped");
+    expect(sink.size).toBe(0);
+    expect(logger.level).toBe("silent");
+  });
+
+  it("reports the level in force", () => {
+    const { logger } = harness({ minLevel: "debug" });
+    expect(logger.level).toBe("debug");
+    logger.setLevel("error");
+    expect(logger.level).toBe("error");
+  });
+
+  it("answers whether a level is enabled", () => {
+    const { logger } = harness({ minLevel: "warn" });
+    expect(logger.isLevelEnabled("info")).toBe(false);
+    expect(logger.isLevelEnabled("error")).toBe(true);
+    expect(logger.isLevelEnabled("verbose" as never)).toBe(false);
+  });
+
+  it("rejects an invalid level on setLevel", () => {
+    const { logger } = harness();
+    expect(() => logger.setLevel("loud" as never)).toThrow(TypeError);
+  });
+
+  it("moves the whole family when set on an unpinned logger", () => {
+    const { logger, sink } = harness();
+    const child = logger.child({ context: "db" });
+    child.setLevel("error");
+    logger.info("dropped");
+    child.info("dropped too");
+    expect(sink.size).toBe(0);
+    expect(logger.level).toBe("error");
+  });
+
+  it("moves only the pin on a logger pinned by child({ minLevel })", () => {
+    const { logger, sink } = harness();
+    const quiet = logger.child({ minLevel: "error" });
+    quiet.info("dropped");
+    logger.info("kept");
+    expect(sink.messages()).toEqual(["kept"]);
+
+    quiet.setLevel("trace");
+    quiet.trace("now kept");
+    expect(logger.level).toBe("trace");
+    expect(sink.messages()).toEqual(["kept", "now kept"]);
+  });
+
+  it("rejects an invalid pin", () => {
+    const { logger } = harness();
+    expect(() => logger.child({ minLevel: "loud" as never })).toThrow(/child.minLevel/);
   });
 });
 
-describe("listLevels / setLevelStyle", () => {
-  it("returns detached copies", () => {
-    const log = new Logger();
-    const first = log.listLevels();
-    first.info.color = "#000000";
-    expect(log.listLevels().info.color).toBe("#4AA3FF");
+describe("derivation", () => {
+  it("replaces the context with scope()", () => {
+    const { logger, sink } = harness({ context: "app" });
+    logger.scope("db").info("a");
+    expect(sink.entries()[0]!.context).toBe("db");
   });
 
-  it("updates shared styles across scopes", () => {
-    const log = new Logger();
-    log.scope("child").setLevelStyle("warn", { color: "#123456" });
-    expect(log.listLevels().warn.color).toBe("#123456");
+  it("composes the context with child()", () => {
+    const { logger, sink } = harness();
+    const db = logger.child({ context: "db" });
+    db.child({ context: "tx" }).info("a");
+    expect(sink.entries()[0]!.context).toBe("db:tx");
   });
 
-  it("drops an invalid setLevelStyle color with a warning", () => {
-    const log = new Logger();
-    log.setLevelStyle("info", { color: "#bad-style" });
-    expect(console.warn).toHaveBeenCalledOnce();
-    expect(log.listLevels().info.color).toBe("#4AA3FF");
+  it("keeps the parent context when a child names none", () => {
+    const { logger, sink } = harness({ context: "app" });
+    logger.child({ fields: { a: 1 } }).info("x");
+    expect(sink.entries()[0]!.context).toBe("app");
   });
 
-  it("fills defaults when the shared store is missing entries", () => {
-    const sparse = new Logger(undefined, {
-      levels: new Map(),
-      transports: [],
-      minLevel: "trace",
-    });
-    expect(sparse.listLevels().info.color).toBe("#4AA3FF");
-    sparse.setLevelStyle("info", { display: "I" });
-    expect(sparse.listLevels().info).toEqual({ color: "#AAAAAA", display: "I" });
+  it("drops the inherited context when asked to replace it", () => {
+    const { logger, sink } = harness({ context: "app" });
+    logger.child({ context: "db", replaceContext: true }).info("a");
+    logger.child({ replaceContext: true }).info("b");
+    expect(sink.entries().map((entry) => entry.context)).toEqual(["db", undefined]);
+  });
+
+  it("merges fields down the chain, with the newest winning", () => {
+    const { logger, sink } = harness({ fields: { app: "api", env: "dev" } });
+    logger.child({ fields: { env: "prod" } }).info("a", { req: 1 });
+    expect(sink.entries()[0]!.fields).toEqual({ app: "api", env: "prod", req: 1 });
+  });
+
+  it("has a shorthand for fields alone", () => {
+    const { logger, sink } = harness();
+    logger.with({ requestId: "abc" }).info("a");
+    expect(sink.entries()[0]!.fields).toEqual({ requestId: "abc" });
+  });
+
+  it("keeps a pin across scope() and further children", () => {
+    const { logger, sink } = harness();
+    const quiet = logger.child({ minLevel: "error" });
+    quiet.scope("db").info("dropped");
+    quiet.child({ context: "tx" }).info("dropped too");
+    expect(sink.size).toBe(0);
+  });
+
+  it("shares transports with its children", () => {
+    const { logger, sink } = harness();
+    const child = logger.child({ context: "db" });
+    const extra = new MemoryTransport();
+    child.addTransport(extra);
+    logger.info("a");
+    expect(extra.messages()).toEqual(["a"]);
+    expect(sink.messages()).toEqual(["a"]);
   });
 });
 
-describe("createLogger", () => {
-  it("builds default and configured instances", () => {
-    expect(createLogger()).toBeInstanceOf(Logger);
-    expect(createLogger({ default: true })).toBeInstanceOf(Logger);
-    expect(createLogger({ minLevel: "info" })).toBeInstanceOf(Logger);
+describe("transports", () => {
+  it("rejects anything that cannot be written to", () => {
+    const { logger } = harness();
+    expect(() => logger.addTransport(null as never)).toThrow(/write\(entry\)/);
+    expect(() => logger.addTransport({} as never)).toThrow(TypeError);
+    expect(() => logger.addTransport("stdout" as never)).toThrow(TypeError);
   });
 
-  it("rejects default:true combined with overrides", () => {
-    expect(() =>
-      createLogger({ default: true, minLevel: "error" } as never),
-    ).toThrow(TypeError);
+  it("detaches one, reporting whether it was attached", () => {
+    const { logger, sink } = harness();
+    expect(logger.removeTransport(sink)).toBe(true);
+    expect(logger.removeTransport(sink)).toBe(false);
+    expect(logger.listTransports()).toEqual([]);
+  });
+
+  it("returns a snapshot of the list", () => {
+    const { logger, sink } = harness();
+    const list = logger.listTransports();
+    logger.addTransport(new MemoryTransport());
+    expect(list).toEqual([sink]);
+  });
+
+  it("honours a per-transport minimum level even on a third-party transport", () => {
+    const seen: string[] = [];
+    const custom: Transport = {
+      minLevel: "error",
+      write: (entry: LogEntry) => void seen.push(entry.level),
+    };
+    const { logger } = harness();
+    logger.addTransport(custom);
+    logger.info("a");
+    logger.error("b");
+    expect(seen).toEqual(["error"]);
+  });
+
+  it("ignores a nonsense minLevel on a third-party transport", () => {
+    const seen: string[] = [];
+    const { logger } = harness();
+    logger.addTransport({
+      minLevel: "loud" as never,
+      write: (entry: LogEntry) => void seen.push(entry.level),
+    });
+    logger.info("a");
+    expect(seen).toEqual(["info"]);
+  });
+
+  it("keeps writing to the others when one throws", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const { logger, sink } = harness();
+      logger.addTransport({
+        write() {
+          throw new Error("sink down");
+        },
+      });
+      const tail = new MemoryTransport();
+      logger.addTransport(tail);
+      expect(() => logger.info("a")).not.toThrow();
+      expect(sink.messages()).toEqual(["a"]);
+      expect(tail.messages()).toEqual(["a"]);
+      expect(diagnostics.codes()).toEqual(["transport-error"]);
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("routes a transport failure to onError when one is given", () => {
+    const onError = vi.fn();
+    const logger = createLogger({
+      console: false,
+      onError,
+      transports: [
+        {
+          write() {
+            throw new Error("sink down");
+          },
+        },
+      ],
+    });
+    logger.info("a");
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect((onError.mock.calls[0]![0] as Error).message).toBe("sink down");
+  });
+
+  it("reports an onError handler that itself throws", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const logger = createLogger({
+        console: false,
+        onError() {
+          throw new Error("handler down");
+        },
+        transports: [
+          {
+            write() {
+              throw new Error("sink down");
+            },
+          },
+        ],
+      });
+      expect(() => logger.info("a")).not.toThrow();
+      expect(diagnostics.entries[0]!.message).toContain("onError handler itself threw");
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("flushes and closes every transport", async () => {
+    const flush = vi.fn(async () => {});
+    const close = vi.fn(async () => {});
+    const logger = createLogger({ console: false, transports: [{ write() {}, flush, close }] });
+    await logger.close();
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves even when transports do not implement flush or close", async () => {
+    const { logger } = harness();
+    await expect(logger.close()).resolves.toBeUndefined();
+  });
+
+  it("reports a flush or close failure rather than rejecting", async () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const logger = createLogger({
+        console: false,
+        transports: [
+          {
+            write() {},
+            flush() {
+              throw new Error("flush down");
+            },
+            close() {
+              throw new Error("close down");
+            },
+          },
+        ],
+      });
+      await expect(logger.close()).resolves.toBeUndefined();
+      expect(diagnostics.codes()).toEqual(["transport-flush-error", "transport-close-error"]);
+    } finally {
+      diagnostics.restore();
+    }
+  });
+});
+
+describe("level styles", () => {
+  it("applies partial overrides onto the defaults", () => {
+    const logger = createLogger({ console: false, levels: { info: { display: "NOTE" } } });
+    expect(logger.listLevels().info).toMatchObject({ display: "NOTE" });
+    expect(logger.listLevels().info.color).toBeDefined();
+  });
+
+  it("drops an invalid colour rather than emitting a broken escape", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const logger = createLogger({ console: false, levels: { info: { color: "burgundy" } } });
+      expect(logger.listLevels().info.color).toBe("#4AA3FF");
+      expect(diagnostics.codes()).toEqual(["invalid-color"]);
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("restyles a level after construction", () => {
+    const stream = new FakeStream();
+    const logger = createLogger({
+      console: { stdout: stream, stderr: stream, timezone: "UTC", colors: false },
+    });
+    logger.setLevelStyle("info", { display: "NOTE" });
+    logger.info("a");
+    expect(plain(stream.lines[0]!)).toContain("[NOTE]");
+  });
+
+  it("rejects an unknown level", () => {
+    const { logger } = harness();
+    expect(() => logger.setLevelStyle("verbose" as never, {})).toThrow(/invalid level/);
+  });
+
+  it("ignores an invalid colour on restyle", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const { logger } = harness();
+      logger.setLevelStyle("info", { color: 42 as never });
+      expect(logger.listLevels().info.color).toBe("#4AA3FF");
+      expect(diagnostics.codes()).toEqual(["invalid-color"]);
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("returns a snapshot that cannot be used to mutate state", () => {
+    const { logger } = harness();
+    logger.listLevels().info.display = "MUTATED";
+    expect(logger.listLevels().info.display).toBe("INFO");
+  });
+});
+
+describe("timezone", () => {
+  it("reaches every transport that renders a timestamp", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-04T14:05:32.123Z"));
+    try {
+      const stream = new FakeStream();
+      const logger = createLogger({
+        console: { stdout: stream, stderr: stream, timezone: "UTC", colors: false },
+        // a transport with no setTimezone is simply skipped
+        transports: [new MemoryTransport()],
+      });
+      logger.info("before");
+      logger.setTimezone("Asia/Dhaka");
+      logger.info("after");
+      expect(stream.lines[0]).toContain("[14:05:32]");
+      expect(stream.lines[1]).toContain("[20:05:32]");
+      expect(() => logger.setTimezone()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is settable at construction through the deprecated flat option", () => {
+    const stream = new FakeStream();
+    const logger = createLogger({
+      timezone: "UTC",
+      console: { stdout: stream, stderr: stream, colors: false, timestamp: "datetime" },
+    });
+    logger.info("a");
+    expect(stream.lines[0]).toMatch(/\d{2}-\d{2}-\d{4}/);
+  });
+});
+
+describe("attach", () => {
+  it("bolts logging methods onto an object", () => {
+    const { logger, sink } = harness();
+    const client: { logs?: Record<string, (message: unknown) => void> } = {};
+    logger.attach(client);
+    client.logs!.info!("a");
+    client.logs!.error!("b");
+    expect(sink.messages()).toEqual(["a", "b"]);
+  });
+
+  it("uses a custom key", () => {
+    const { logger, sink } = harness();
+    const client: Record<string, never> = {};
+    logger.attach(client, "log");
+    (client as never as { log: { warn(m: string): void } }).log.warn("a");
+    expect(sink.messages()).toEqual(["a"]);
+  });
+
+  it("refuses a key that would reach the prototype", () => {
+    const { logger } = harness();
+    for (const key of ["__proto__", "constructor", "prototype"]) {
+      expect(() => logger.attach({}, key)).toThrow(/not a safe property key/);
+    }
+  });
+
+  it("warns before overwriting an existing property", () => {
+    const diagnostics = captureDiagnostics();
+    try {
+      const { logger } = harness();
+      logger.attach({ logs: "mine" });
+      expect(diagnostics.codes()).toEqual(["attach-overwrite"]);
+    } finally {
+      diagnostics.restore();
+    }
+  });
+
+  it("carries the bound context of the logger it came from", () => {
+    const { logger, sink } = harness();
+    const client: Record<string, unknown> = {};
+    logger.child({ context: "db" }).attach(client);
+    (client as { logs: { info(m: string): void } }).logs.info("a");
+    expect(sink.entries()[0]!.context).toBe("db");
+  });
+});
+
+describe("end to end", () => {
+  it("writes JSON a machine can parse, with inherited context and fields", () => {
+    const stream = new FakeStream();
+    const logger = createLogger({
+      console: false,
+      redact: ["token"],
+      transports: [new StreamTransport({ stream })],
+    }).child({ context: "api", fields: { service: "auth" } });
+
+    logger.info("request handled", { token: "secret", ms: 12 });
+
+    expect(JSON.parse(stream.lines[0]!)).toMatchObject({
+      level: "info",
+      context: "api",
+      msg: "request handled",
+      service: "auth",
+      token: "[redacted]",
+      ms: 12,
+    });
   });
 });
