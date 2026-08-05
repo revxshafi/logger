@@ -1,16 +1,48 @@
+# dependencies
 node_modules/
-*.log
-.DS_Store
+
+# build output & coverage
 dist/
+coverage/
+*.tsbuildinfo
+
+# secrets, never commit these
 .env
-.local
+.env.*
+!.env.example
+*.pem
+*.key
+.npmrc
+
+# editor & OS junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Replit / local sandbox state
 .replit
-.claude-data
-.claude/
-skills-lock.json
+replit.nix
+.local
 .cache/
 .config/
 .upm/
-.gitignore 
-.editorconfig
-.npmignore
+.breakpoints
+
+# AI tooling, local to my machine & not useful to anyone cloning this
+CLAUDE.md
+.claude/
+.claude-data/
+.agents/
+skills-lock.json
+
+# scratch
+tmp/
+scratch/
+*.local.*
