@@ -173,6 +173,22 @@ numbers vary by machine, ratios are what matter.
 - Added `npm run bench` and `npm run verify` (renders every feature to a real
   terminal).
 
+## [1.3.0]
+
+### Added
+
+- `timeColor` sets the timestamp colour in dev mode, defaulting to `#AAFF22`.
+- `showDate` controls the date prefix in either format. On by default in dev
+  mode, opt in for the normal format with `showDate: true`.
+
+### Changed
+
+- `dev: true` renders much closer to the classic bot-logger layout: green
+  `DD-MM-YYYY HH:MM:SS` timestamp, the level colour as a badge background with
+  black or white text picked for contrast, and prefixes padded or truncated to
+  five characters so messages line up. The normal format is unchanged unless
+  `showDate` is set.
+
 ## [1.2.1]
 
 ### Fixed
