@@ -12,7 +12,9 @@ coverage/
 !.env.example
 *.pem
 *.key
-.npmrc
+# the project .npmrc is committed on purpose (pins the public registry, no creds in it).
+# auth tokens live in ~/.npmrc which git never sees anyway
+
 
 # editor & OS junk
 .DS_Store
